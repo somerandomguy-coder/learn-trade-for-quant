@@ -1,6 +1,6 @@
 CXX      := g++
 
-CXXFLAGS := -std=c++20 -O3 -Wall -Wextra
+CXXFLAGS := -std=c++17 -O3 -Wall -Wextra
 
 TARGET   := quant_app
 SRC      := main.cpp
