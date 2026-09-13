@@ -1,65 +1,78 @@
-#include "types.hpp"
-#include "vector"
-#include <cstddef>
-#include <cstdio>
-#include <cstdlib>
+#include <algorithm>
 #include <iostream>
+#include <optional>
 #include <vector>
+struct Tick {
+  double price;
+  double volume;
+};
 
-struct TickBuffer {
-  std::vector<double> buffer;
-  size_t capacity;
-  size_t head = 0;
-  size_t count = 0;
+struct Bar {
+  double open;
+  double high;
+  double low;
+  double close;
+  double volume;
+};
 
-  TickBuffer(int limit) {
-    if (limit <= 0) {
-      std::cerr << "can't have buffer with size lower than zero\n";
-      std::abort();
+struct VolumeBarBuilder {
+  double open = 0.0;
+  double high = 0.0;
+  double low = 0.0;
+  double close = 0.0;
+  double current_volume = 0.0;
+  double volume_threshold;
+  bool is_building = false;
+
+  VolumeBarBuilder(double threshold) : volume_threshold(threshold) {};
+
+  std::optional<Bar> process_tick(const Tick &tick) {
+    if (!is_building) {
+      current_volume = tick.volume;
+      open = tick.price;
+      close = tick.price;
+      high = tick.price;
+      low = tick.price;
+      is_building = true;
+
+    } else {
+      high = std::max(high, tick.price);
+      low = std::min(low, tick.price);
+      current_volume += tick.volume;
+      if (current_volume >= volume_threshold) {
+        close = tick.price;
+        is_building = false;
+        return Bar{open, high, low, close, current_volume};
+      };
     }
-
-    capacity = limit;
-    buffer = std::vector<double>(0, limit * 2);
-  };
-
-  double average() {
-    double sum = 0;
-
-    for (auto it = buffer.begin() + head; it < buffer.end(); it++) {
-      // std::cout << "*it: " << *it << "\n";
-      sum += *it;
-    }
-    // if there's only 1, 2 or 3 element it would use the actual size
-    double average = sum / std::min(capacity, count);
-    // std::cout << "sum: " << sum << "\n";
-    // std::cout << "size: " << std::min(capacity, count) << "\n";
-    // std::cout << "average: " << average << "\n";
-    return average;
-  };
-
-  void push(double e) {
-    buffer.push_back(e);
-    count++;
-    head = std::max(int(count) - int(capacity), 0);
-    // std::cout << "head: " << head << "\n";
+    return std::nullopt;
   }
 };
 
 int main() {
-  std::cout << "Hello, World!\n";
-  TickBuffer ring(3);
-  ring.push(1);
-  ring.push(2);
-  std::cout << "average: " << ring.average() << "\n";
-  ring.push(3);
-  std::cout << "average: " << ring.average() << "\n";
-  ring.push(4);
-  std::cout << "average: " << ring.average() << "\n";
-  ring.push(5);
-  std::cout << "average: " << ring.average() << "\n";
-  ring.push(5);
-  std::cout << "average: " << ring.average() << "\n";
-  ring.push(5);
-  std::cout << "average: " << ring.average() << "\n";
+  // Build a bar every time 50.0 lots/units of gold are traded
+  VolumeBarBuilder builder(50.0);
+
+  std::vector<Tick> stream = {
+      {2650.00, 20.0}, // Total: 20 -> in progress
+      {2650.50, 15.0}, // Total: 35 -> in progress
+      {2649.80, 25.0}, // Total: 60 -> hits threshold! Bar 1 complete.
+      {2651.00, 30.0}, // Total: 30 -> in progress
+      {2651.20, 25.0}  // Total: 55 -> hits threshold! Bar 2 complete.
+  };
+
+  int bar_count = 1;
+  for (const auto &tick : stream) {
+    std::optional<Bar> completed_bar = builder.process_tick(tick);
+    if (completed_bar.has_value()) {
+      std::cout << "[Bar " << bar_count++ << " Closed]\n"
+                << "  Open:   " << completed_bar->open << "\n"
+                << "  High:   " << completed_bar->high << "\n"
+                << "  Low:    " << completed_bar->low << "\n"
+                << "  Close:  " << completed_bar->close << "\n"
+                << "  Volume: " << completed_bar->volume << "\n\n";
+    }
+  }
+
   return 0;
 }
