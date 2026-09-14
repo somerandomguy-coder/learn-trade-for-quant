@@ -12,4 +12,9 @@ struct Level1Quote {
   double ask_size;
 };
 
+struct Tick {
+  double price;
+  double volume;
+};
+
 enum class Side { BUY, SELL };
