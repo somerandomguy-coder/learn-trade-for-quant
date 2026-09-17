@@ -1,64 +1,50 @@
 #include "types.hpp"
+#include <algorithm>
+#include <cstdlib>
 #include <iostream>
+#include <vector>
 
-struct SimplePosition {
-  Side _side = Side::BUY;
-  double _lots = 0;
-  double _entry_price = 0;
-  bool is_opened = false;
+struct TrueRangeCalculator {
+  double prev_close = 0.0;
+  bool is_initialized = false;
 
-  SimplePosition() = default;
+  TrueRangeCalculator() = default;
 
-  void open_position(Side side, double lots, double fill_price) {
-    if (lots <= 0 || fill_price <= 0) {
-      std::cerr << "lots or fill_price have to be positive";
-    }
-    _side = side;
-    _lots = lots;
-    _entry_price = fill_price;
-    is_opened = true;
-  }
+  double calculate_tr(const Bar &bar) {
+    double true_range = bar.high - bar.low;
 
-  double close_position(double exit_price, double contract_multiplier) {
-    if (!is_opened || _lots <= 0 || contract_multiplier <= 0) {
-      return 0.0;
-    }
-    double profit_loss;
-    profit_loss = (exit_price - _entry_price) * _lots * contract_multiplier;
-
-    if (_side == Side::SELL) {
-      profit_loss *= -1;
+    if (!is_initialized) {
+      is_initialized = true;
+    } else {
+      true_range = std::max(true_range, std::abs(bar.high - prev_close));
+      true_range = std::max(true_range, std::abs(bar.low - prev_close));
     }
 
-    // reset the state
-    is_opened = false;
-    _side = Side::BUY;
-    _lots = 0.0;
-    _entry_price = 0.0;
-
-    return profit_loss;
-  }
+    prev_close = bar.close;
+    return true_range;
+  };
 };
 
 int main() {
-  // Standard Gold contract multiplier (100 oz / lot)
-  const double COMEX_GC_MULT = 100.0;
+  TrueRangeCalculator tr_calc;
 
-  SimplePosition pos;
+  // Scenario: Gold bars with a weekend/news gap
+  // Bar 1: Normal bar (2650 -> 2655)
+  // Bar 2: Gap up! Opens at 2660, high 2662, low 2659, close 2661
+  //        Notice high-low is only $3.00, but from prev close (2655) to high
+  //        (2662) is $7.00!
+  std::vector<Bar> bars = {
+      {2650.0, 2655.0, 2648.0, 2654.0}, // Bar 1: high-low = 7.0
+      {2660.0, 2662.0, 2659.0,
+       2661.0}, // Bar 2: gap up from 2654.0 -> TR should be 8.0 (2662 - 2654)
+      {2658.0, 2660.0, 2652.0, 2653.0}
+      // Bar 3: high-low = 8.0, gap down from 2661 to 2652 = 9.0
+  };
 
-  // Trade 1: Long Gold (BUY 0.5 lots at 2650.00, close at 2654.50 -> +$4.50
-  // move)
-  pos.open_position(Side::BUY, 0.5, 2650.00);
-  double pnl1 = pos.close_position(2654.50, COMEX_GC_MULT);
-  // Expected: 4.50 * 0.5 * 100 = +$225.00
-  std::cout << "Trade 1 Realized P&L: $" << pnl1 << "\n";
-
-  // Trade 2: Short Gold (SELL 1.0 lot at 2660.00, close at 2662.00 -> -$2.00
-  // loss)
-  pos.open_position(Side::SELL, 1.0, 2660.00);
-  double pnl2 = pos.close_position(2662.00, COMEX_GC_MULT);
-  // Expected: (2660.00 - 2662.00) * 1.0 * 100 = -$200.00
-  std::cout << "Trade 2 Realized P&L: $" << pnl2 << "\n";
+  for (size_t i = 0; i < bars.size(); ++i) {
+    double tr = tr_calc.calculate_tr(bars[i]);
+    std::cout << "Bar " << i + 1 << " | True Range: $" << tr << "\n";
+  }
 
   return 0;
 }

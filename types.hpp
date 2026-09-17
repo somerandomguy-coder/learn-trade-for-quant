@@ -17,4 +17,12 @@ struct Tick {
   double volume;
 };
 
+struct Bar {
+  double open;
+  double high;
+  double low;
+  double close;
+  double volume;
+};
+
 enum class Side { BUY, SELL };

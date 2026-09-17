@@ -1,19 +1,8 @@
+#include "types.hpp"
 #include <algorithm>
 #include <iostream>
 #include <optional>
 #include <vector>
-struct Tick {
-  double price;
-  double volume;
-};
-
-struct Bar {
-  double open;
-  double high;
-  double low;
-  double close;
-  double volume;
-};
 
 struct VolumeBarBuilder {
   double open = 0.0;
