@@ -1,50 +1,83 @@
-#include "types.hpp"
-#include <algorithm>
-#include <cstdlib>
+#include <cstdint>
+#include <deque>
 #include <iostream>
-#include <vector>
 
-struct TrueRangeCalculator {
-  double prev_close = 0.0;
-  bool is_initialized = false;
+struct Order {
+  uint64_t id;
+  double remaining_size;
+};
 
-  TrueRangeCalculator() = default;
+struct PriceLevelQueue {
+  std::deque<Order> orders;
 
-  double calculate_tr(const Bar &bar) {
-    double true_range = bar.high - bar.low;
+  void add_order(uint64_t id, double lots) {
+    if (lots == 0)
+      return;
+    orders.push_back({id, lots});
+  };
 
-    if (!is_initialized) {
-      is_initialized = true;
-    } else {
-      true_range = std::max(true_range, std::abs(bar.high - prev_close));
-      true_range = std::max(true_range, std::abs(bar.low - prev_close));
+  double match_market_order(double lots) {
+    if (orders.empty())
+      return 0;
+
+    double order_matched = 0.0;
+    while (!orders.empty()) {
+      Order front = orders.front();
+      orders.pop_front();
+
+      if (lots >= front.remaining_size) {
+        lots -= front.remaining_size;
+        order_matched += front.remaining_size;
+      } else {
+        front.remaining_size -= lots;
+        orders.push_front(front);
+        order_matched += lots;
+        return order_matched;
+      }
     }
 
-    prev_close = bar.close;
-    return true_range;
+    return order_matched;
+  };
+
+  size_t order_count() { return orders.size(); }
+
+  size_t order_depth() {
+    size_t count = 0;
+    for (auto const &order : orders) {
+      count += order.remaining_size;
+    }
+
+    return count;
   };
 };
 
 int main() {
-  TrueRangeCalculator tr_calc;
+  // Resting bids at price $2650.00
+  PriceLevelQueue best_bid_level;
 
-  // Scenario: Gold bars with a weekend/news gap
-  // Bar 1: Normal bar (2650 -> 2655)
-  // Bar 2: Gap up! Opens at 2660, high 2662, low 2659, close 2661
-  //        Notice high-low is only $3.00, but from prev close (2655) to high
-  //        (2662) is $7.00!
-  std::vector<Bar> bars = {
-      {2650.0, 2655.0, 2648.0, 2654.0}, // Bar 1: high-low = 7.0
-      {2660.0, 2662.0, 2659.0,
-       2661.0}, // Bar 2: gap up from 2654.0 -> TR should be 8.0 (2662 - 2654)
-      {2658.0, 2660.0, 2652.0, 2653.0}
-      // Bar 3: high-low = 8.0, gap down from 2661 to 2652 = 9.0
-  };
+  best_bid_level.add_order(101, 10.0); // First in line (10 lots)
+  best_bid_level.add_order(102, 25.0); // Second in line (25 lots)
+  best_bid_level.add_order(103, 15.0); // Third in line (15 lots)
 
-  for (size_t i = 0; i < bars.size(); ++i) {
-    double tr = tr_calc.calculate_tr(bars[i]);
-    std::cout << "Bar " << i + 1 << " | True Range: $" << tr << "\n";
-  }
+  std::cout << "Starting resting orders: " << best_bid_level.order_count()
+            << "\n\n";
+
+  // Scenario 1: A market sell order arrives for 15 lots
+  // Fills order 101 completely (10 lots) and takes 5 lots from order 102
+  double filled_1 = best_bid_level.match_market_order(15.0);
+  std::cout << "Market Order 1 (size 15.0) matched: " << filled_1 << " lots\n";
+  std::cout << "Remaining resting orders: " << best_bid_level.order_count()
+            << " (Front order ID " << best_bid_level.orders.front().id
+            << " has " << best_bid_level.orders.front().remaining_size
+            << " lots left)\n\n";
+
+  // Scenario 2: A large market sell order arrives for 50 lots
+  // Should clear the rest of 102 (20 lots) and all of 103 (15 lots), exhausting
+  // the book
+  double filled_2 = best_bid_level.match_market_order(50.0);
+  std::cout << "Market Order 2 (size 50.0) matched: " << filled_2 << " lots\n";
+  std::cout << "Remaining resting orders: " << best_bid_level.order_count()
+            << "\n";
 
   return 0;
 }
